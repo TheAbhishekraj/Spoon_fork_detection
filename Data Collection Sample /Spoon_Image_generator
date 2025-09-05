@@ -1,0 +1,129 @@
+# ==============================================================================
+# Step 1: Install necessary libraries
+# ==============================================================================
+# We use 'quiet' to keep the output clean.
+print("Installing required libraries... This may take a minute.")
+!pip install diffusers transformers accelerate invisible_watermark --quiet
+!pip install xformers --quiet # Helps with performance and memory
+
+# ==============================================================================
+# Step 2: Import libraries and set up the image generation pipeline
+# ==============================================================================
+import torch
+from diffusers import StableDiffusionPipeline
+import os
+import shutil
+from tqdm.auto import tqdm # For a nice progress bar
+
+print("Setting up the image generation pipeline...")
+
+# Load the pre-trained Stable Diffusion model.
+# This will download the model the first time you run it.
+model_id = "runwayml/stable-diffusion-v1-5"
+pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+
+# Move the pipeline to the GPU for faster processing.
+pipe = pipe.to("cuda")
+
+# ==============================================================================
+# Step 3: Define the list of prompts for the 50 spoon images
+# ==============================================================================
+# These are the detailed descriptions we created earlier.
+# A good prompt includes subject, style, angle, background, and lighting.
+prompts = [
+    # Tablespoons (Metal)
+    "spoon_01.jpg: A standard stainless steel tablespoon, top-down angle on a pure white background, bright studio lighting, photorealistic, high resolution.",
+    "spoon_02.jpg: A shiny metal tablespoon, side profile, resting on a dark granite countertop, reflection visible, photorealistic, 4k.",
+    "spoon_03.jpg: A single tablespoon at a 45-degree angle on a rustic, weathered wooden table, natural light from a window, sharp focus.",
+    "spoon_04.jpg: Close-up shot of the bowl of a tablespoon holding a few drops of clear water, blurred kitchen background, macro photography.",
+    "spoon_05.jpg: An ornate, vintage silver tablespoon with detailed engravings on the handle, placed on a black velvet cloth, dramatic lighting.",
+    "spoon_06.jpg: A modern, matte-finish black metal tablespoon next to a white ceramic plate, minimalist style, top-down view.",
+    "spoon_07.jpg: A tablespoon resting inside an empty white soup bowl, viewed from above, clean aesthetic.",
+    "spoon_08.jpg: A slightly tarnished brass tablespoon on a cool marble surface, interesting textures, photorealistic.",
+    "spoon_09.jpg: Two identical stainless steel tablespoons crossed over each other on a linen napkin, elegant composition.",
+    "spoon_10.jpg: A tablespoon held by a hand, scooping white sugar from a sugar bowl, action shot, high detail.",
+    # Teaspoons (Metal & Plastic)
+    "spoon_11.jpg: A small, polished silver teaspoon resting on the saucer of a white teacup, cafe setting, high resolution.",
+    "spoon_12.jpg: A bright red plastic teaspoon lying on a colorful, patterned children's placemat, playful mood.",
+    "spoon_13.jpg: Macro shot of the tip of a metal teaspoon showing fine scratches from use, detailed texture.",
+    "spoon_14.jpg: A long-handled iced-tea spoon (metal) standing upright in a tall, empty glass, minimalist.",
+    "spoon_15.jpg: A disposable, translucent plastic teaspoon on a plain brown paper napkin, simple and clear.",
+    "spoon_16.jpg: A small, decorative teaspoon with a ceramic handle, placed next to a slice of cake on a plate.",
+    "spoon_17.jpg: A simple metal teaspoon, shot from a low angle on a clean, light-blue background, isolated.",
+    "spoon_18.jpg: Three teaspoons of different materials (metal, plastic, wood) arranged neatly in a row on a neutral background.",
+    "spoon_19.jpg: A teaspoon partially submerged in a cup of black coffee, viewed from above, creating ripples.",
+    "spoon_20.jpg: A blue plastic teaspoon on a white background, isolated, product photography style.",
+    # Wooden Spoons
+    "spoon_21.jpg: A large, dark-wood cooking spoon with a smooth finish, resting on a white kitchen counter, clean lighting.",
+    "spoon_22.jpg: A small, light-colored bamboo spoon, top-down shot on a dark slate background, contrasting colors.",
+    "spoon_23.jpg: Close-up on the beautiful texture and grain of a hand-carved olive wood spoon, warm lighting.",
+    "spoon_24.jpg: A wooden spoon with a hole in the center (risotto spoon), hanging from a hook on a kitchen wall.",
+    "spoon_25.jpg: A wooden cooking spoon resting on the edge of a stainless steel pot, with a tiny bit of red sauce on it.",
+    "spoon_26.jpg: Two different-sized wooden spoons, one light and one dark, side-by-side on a burlap texture.",
+    "spoon_27.jpg: A flat-edged wooden spoon leaning against a bowl of flour in a rustic kitchen.",
+    "spoon_28.jpg: A well-used, slightly stained wooden spoon, showing character and age, on a dark, moody background.",
+    "spoon_29.jpg: A round, deep-bowled wooden spoon on a red and white checkered tablecloth, picnic vibe.",
+    "spoon_30.jpg: A set of small wooden spoons for spices, each in a small ceramic bowl, top-down view.",
+    # Plastic Spoons
+    "spoon_31.jpg: A standard white disposable plastic spoon, isolated on a bright green background, pop art style.",
+    "spoon_32.jpg: A sturdy, reusable black plastic spoon on a kitchen countertop next to a container.",
+    "spoon_33.jpg: A yellow plastic baby spoon with a soft silicone tip, on a clean high-chair tray.",
+    "spoon_34.jpg: A fan arrangement of five plastic spoons in different vibrant colors (red, blue, green, yellow, orange).",
+    "spoon_35.jpg: A clear plastic spoon for gelato, shot in a close-up against a blurred, colorful background.",
+    "spoon_36.jpg: A single white plastic spoon on a red-and-white checkered picnic blanket, bright daylight.",
+    "spoon_37.jpg: A long-handled plastic spoon for stirring drinks, next to a pitcher of lemonade.",
+    "spoon_38.jpg: Close-up shot showing the recycling symbol on the back of a plastic spoon.",
+    "spoon_39.jpg: A broken white plastic spoon, the bowl snapped from the handle, on a dark surface.",
+    "spoon_40.jpg: A plastic soup spoon, Chinese-style, in an empty white bowl.",
+    # Serving Spoons
+    "spoon_41.jpg: A large, slotted stainless steel serving spoon resting in an empty glass salad bowl, bright and clean.",
+    "spoon_42.jpg: An elegant, polished silver serving spoon with an ornate handle, on a white linen tablecloth.",
+    "spoon_43.jpg: A black nylon serving spoon, safe for non-stick pans, on a granite countertop.",
+    "spoon_44.jpg: A deep, ladle-style serving spoon made of stainless steel, shot from a side angle, photorealistic.",
+    "spoon_45.jpg: A wide, flat-bowled serving spoon made of dark wood inside a wooden bowl of rice.",
+    "spoon_46.jpg: A serving spoon with a ceramic, painted handle, lying next to a casserole dish.",
+    "spoon_47.jpg: A perforated (slotted) serving spoon held up, with bright light shining through the holes.",
+    "spoon_48.jpg: A copper-colored metal serving spoon giving off warm reflections, on a dark slate serving platter.",
+    "spoon_49.jpg: A combination serving set: a large serving spoon and a serving fork, side-by-side on a napkin.",
+    "spoon_50.jpg: A large plastic serving spoon, white, resting in a bowl of potato salad at an outdoor picnic.",
+]
+
+# ==============================================================================
+# Step 4: Generate the images and save them to a directory
+# ==============================================================================
+output_dir = "generated_spoons"
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+print(f"Starting image generation. This will create {len(prompts)} images...")
+
+# Loop through each prompt, generate an image, and save it
+for prompt in tqdm(prompts, desc="Generating Images"):
+    # Split the prompt to get the filename and the actual description
+    filename, text_prompt = prompt.split(": ", 1)
+
+    # Generate the image
+    image = pipe(text_prompt).images[0]
+
+    # Save the image
+    image_path = os.path.join(output_dir, filename)
+    image.save(image_path)
+
+print("All images have been generated successfully!")
+
+# ==============================================================================
+# Step 5: Zip the generated images
+# ==============================================================================
+zip_filename = "spoon_images"
+zip_path = f"{zip_filename}.zip"
+
+print(f"Creating zip file: {zip_path}...")
+
+# Use shutil to create a zip archive of the output directory
+shutil.make_archive(zip_filename, 'zip', output_dir)
+
+print("="*60)
+print("✅ DONE! ✅")
+print(f"Your zip file '{zip_path}' is ready.")
+print("Please refresh the file browser on the left to see and download it.")
+print("="*60)
